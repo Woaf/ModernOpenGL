@@ -5,6 +5,8 @@
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
 
+#include <shaderprogram.h>
+
 static const std::string vPath = "../ModernOpenGL/shaders/shader.vert";
 static const std::string fPath = "../ModernOpenGL/shaders/shader.frag";
 
@@ -14,13 +16,24 @@ static const unsigned int HEIGHT = 720;
 
 static bool fullscreen = false;
 static bool hasToSwitch = false;
+static bool wireframeMode = false;
 
-std::string readShader(const std::string path);
 bool initOpenGL(GLFWwindow*& window, bool& windowInit);
 void showFPS(GLFWwindow* window);
 void handleKeyboard(GLFWwindow* window, int key, int code, int action, int mode);
 void checkForFullscreen(GLFWwindow*& window, bool& windowInit);
-GLuint createProgram();
+
+static const GLfloat vertices[] = {
+    -0.5f, 0.5f, 0.0f,   1.0f, 0.0f, 0.0f,
+    0.5f, -0.5f, 0.0f,   0.0f, 1.0f, 0.0f,
+    -0.5f, -0.5f, 0.0f,  0.0f, 0.0f, 1.0f,
+    0.5f, 0.5f, 0.0f,    1.0f, 1.0f, 0.0f,
+};
+
+static const GLuint indices[] = {
+    0, 1, 2,
+    0, 1, 3,
+};
 
 int main()
 {
@@ -29,13 +42,7 @@ int main()
     if(!initOpenGL(window, windowInit))
         return -1;
 
-    GLfloat vertices[] = {
-        0.0f, 0.5f, 0.0f,
-        0.5f, -0.5f, 0.0f,
-        -0.5f, -0.5f, 0.0f
-    };
-
-    GLuint VAO, VBO;
+    GLuint VAO, VBO, EBO;
     glGenBuffers(1, &VBO);
     glBindBuffer(GL_ARRAY_BUFFER, VBO);
     glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
@@ -43,11 +50,18 @@ int main()
     glGenVertexArrays(1, &VAO);
     glBindVertexArray(VAO);
 
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, nullptr);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(GL_FLOAT)*6, nullptr);
     glEnableVertexAttribArray(0);
 
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(GL_FLOAT)*6, (GLvoid*)(sizeof(GL_FLOAT)*3));
+    glEnableVertexAttribArray(1);
 
-    GLuint program = createProgram();
+    glGenBuffers(1, &EBO);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
+
+    ShaderProgram program;
+    program.loadShaders(vPath.c_str(), fPath.c_str());
 
     while(!glfwWindowShouldClose(window))
     {
@@ -58,29 +72,21 @@ int main()
 
         glClear(GL_COLOR_BUFFER_BIT);
 
-        glUseProgram(program);
+        program.use();
 
         glBindVertexArray(VAO);
-        glDrawArrays(GL_TRIANGLES, 0, 3);
+        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, nullptr);
         glBindVertexArray(0);
 
         glfwSwapBuffers(window);
     }
 
-    glDeleteProgram(program);
     glDeleteVertexArrays(1, &VAO);
     glDeleteBuffers(1, &VBO);
+    glDeleteBuffers(1, &EBO);
 
     glfwTerminate();
     return 0;
-}
-
-std::string readShader(const std::string path)
-{
-    std::ifstream source(path);
-    std::string content((std::istreambuf_iterator<char>(source)), std::istreambuf_iterator<char>());
-
-    return content;
 }
 
 bool initOpenGL(GLFWwindow*& window, bool& windowInit)
@@ -116,59 +122,12 @@ bool initOpenGL(GLFWwindow*& window, bool& windowInit)
     return true;
 }
 
-GLuint createProgram()
-{
-    GLint result;
-    GLchar info[512];
-
-    GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
-    std::string vShader = readShader(vPath);
-    const char* v = vShader.c_str();
-    glShaderSource(vertexShader, 1, &v, nullptr);
-    glCompileShader(vertexShader);
-    glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &result);
-    if(!result)
-    {
-        glGetShaderInfoLog(vertexShader, sizeof(info), nullptr, info);
-        std::cout << "VERTEX SHADER ERROR:" << std::endl << info << std::endl;
-    }
-
-    GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-    std::string fShader = readShader(fPath);
-    const char* f = fShader.c_str();
-    glShaderSource(fragmentShader, 1, &f, nullptr);
-    glCompileShader(fragmentShader);
-    glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &result);
-    if(!result)
-    {
-        glGetShaderInfoLog(fragmentShader, sizeof (info), nullptr, info);
-        std::cout << "FRAGMENT SHADER ERROR:" << std::endl << info << std::endl;
-    }
-
-    GLuint program = glCreateProgram();
-    glAttachShader(program, vertexShader);
-    glAttachShader(program, fragmentShader);
-    glLinkProgram(program);
-    glGetProgramiv(program, GL_LINK_STATUS, &result);
-    if(!result)
-    {
-        glGetProgramInfoLog(program, sizeof(info), nullptr, info);
-        std::cout << "PROGRAM LINK ERROR:" << std::endl << info << std::endl;
-    }
-
-    glDeleteShader(vertexShader);
-    glDeleteShader(fragmentShader);
-
-    return program;
-}
-
 void handleKeyboard(GLFWwindow* window, int key, int code, int action, int mode)
 {
     if(key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
     {
         if(fullscreen)
         {
-            fullscreen = !fullscreen;
             hasToSwitch = true;
         }
         else
@@ -179,8 +138,17 @@ void handleKeyboard(GLFWwindow* window, int key, int code, int action, int mode)
 
     if(key == GLFW_KEY_F && action == GLFW_PRESS && mode == GLFW_MOD_SHIFT)
     {
-        fullscreen = !fullscreen;
         hasToSwitch = true;
+    }
+
+    if(key == GLFW_KEY_H && action == GLFW_PRESS)
+    {
+        wireframeMode = !wireframeMode;
+
+        if(wireframeMode)
+            glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+        else
+            glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
     }
 }
 
@@ -188,8 +156,14 @@ void checkForFullscreen(GLFWwindow*& window, bool& windowInit)
 {
     if(hasToSwitch || windowInit)
     {
+        if(!windowInit)
+            fullscreen = !fullscreen;
+
         hasToSwitch = false;
         glfwDestroyWindow(window);
+
+        glewInit();
+
         if(fullscreen)
         {
             GLFWmonitor* monitor = glfwGetPrimaryMonitor();
