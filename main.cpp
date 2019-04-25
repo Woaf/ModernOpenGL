@@ -21,7 +21,7 @@ static bool wireframeMode = false;
 bool initOpenGL(GLFWwindow*& window, bool& windowInit);
 void showFPS(GLFWwindow* window);
 void handleKeyboard(GLFWwindow* window, int key, int code, int action, int mode);
-void checkForFullscreen(GLFWwindow*& window, bool& windowInit);
+void checkForFullscreen(GLFWwindow** window, bool& windowInit);
 
 static const GLfloat vertices[] = {
     -0.5f, 0.5f, 0.0f,   1.0f, 0.0f, 0.0f,
@@ -68,7 +68,7 @@ int main()
         showFPS(window);
         glfwPollEvents();
 
-        checkForFullscreen(window, windowInit);
+        checkForFullscreen(&window, windowInit);
 
         glClear(GL_COLOR_BUFFER_BIT);
 
@@ -101,7 +101,7 @@ bool initOpenGL(GLFWwindow*& window, bool& windowInit)
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 
-    checkForFullscreen(window, windowInit);
+    checkForFullscreen(&window, windowInit);
 
     if(window == nullptr)
     {
@@ -152,7 +152,7 @@ void handleKeyboard(GLFWwindow* window, int key, int code, int action, int mode)
     }
 }
 
-void checkForFullscreen(GLFWwindow*& window, bool& windowInit)
+void checkForFullscreen(GLFWwindow** window, bool& windowInit)
 {
     if(hasToSwitch || windowInit)
     {
@@ -160,26 +160,27 @@ void checkForFullscreen(GLFWwindow*& window, bool& windowInit)
             fullscreen = !fullscreen;
 
         hasToSwitch = false;
-        glfwDestroyWindow(window);
 
-        glewInit();
+        GLFWmonitor* monitor = glfwGetPrimaryMonitor();
+        const GLFWvidmode* vidmode = glfwGetVideoMode(monitor);
 
         if(fullscreen)
         {
-            GLFWmonitor* monitor = glfwGetPrimaryMonitor();
-            const GLFWvidmode* vidmode = glfwGetVideoMode(monitor);
+            if(*window == nullptr)
+                *window = glfwCreateWindow(vidmode->width, vidmode->height, TITLE.c_str(), monitor, nullptr);
 
-            if(vidmode != nullptr)
-            {
-                window = glfwCreateWindow(vidmode->width, vidmode->height, TITLE.c_str(), monitor, nullptr);
-            }
+            glfwSetWindowMonitor(*window, monitor, 0, 0, vidmode->width, vidmode->height, vidmode->refreshRate);
         }
         else
         {
-            window = glfwCreateWindow(WIDTH, HEIGHT, TITLE.c_str(), nullptr, nullptr);
+            if(*window == nullptr)
+                *window = glfwCreateWindow(WIDTH, HEIGHT, TITLE.c_str(), nullptr, nullptr);
+
+            glfwSetWindowMonitor(*window, nullptr, 0, 0, WIDTH, HEIGHT, vidmode->refreshRate);
         }
-        glfwMakeContextCurrent(window);
-        glfwSetKeyCallback(window, handleKeyboard);
+
+        glfwMakeContextCurrent(*window);
+        glfwSetKeyCallback(*window, handleKeyboard);
     }
 
     if(windowInit)
